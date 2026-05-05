@@ -1,87 +1,120 @@
-
 from flask import Flask, render_template, request
+import pandas as pd
 import joblib
-import numpy as np
 
 app = Flask(__name__)
 
-# Load model
-model = joblib.load('DC.pkl')
+# load trained pipeline
+model = joblib.load("excellent_salary_prediction.pkl")
 
 
-@app.route('/')
+def exp_bucket(x):
+    if x <= 2:
+        return "entry"
+    elif x <= 5:
+        return "junior"
+    elif x <= 10:
+        return "mid"
+    elif x <= 15:
+        return "senior"
+    return "lead"
+
+
+education_map = {
+    "High School": 0,
+    "Diploma": 1,
+    "Bachelor": 2,
+    "Master": 3,
+    "PhD": 4,
+}
+
+company_map = {
+    "Startup": 0,
+    "Small": 1,
+    "Medium": 2,
+    "Large": 3,
+    "Enterprise": 4,
+}
+
+remote_map = {
+    "No": 0,
+    "Hybrid": 1,
+    "Yes": 2,
+}
+
+
+@app.route("/")
 def home():
-    return render_template('index.html')
+    return render_template("index.html")
 
 
-@app.route('/predict', methods=['POST'])
+@app.route("/predict", methods=["POST"])
 def predict():
     try:
-        # -------- Numeric inputs --------
-        job_title = float(request.form.get("job_title", 0))
-        experience_years = float(request.form.get('experience_years', 0))
-        skills_count = float(request.form.get('skills_count', 0))
-        certifications = float(request.form.get('certifications', 0))
+        experience_years = int(request.form["experience_years"])
+        skills_count = int(request.form["skills_count"])
+        certifications = int(request.form["certifications"])
 
-        # -------- Education --------
-        edu_diploma = int(request.form.get('edu_diploma', 0))
-        edu_highschool = int(request.form.get('edu_highschool', 0))
-        edu_master = int(request.form.get('edu_master', 0))
-        edu_phd = int(request.form.get('edu_phd', 0))
+        job_title = request.form["job_title"].strip()
+        education_level = request.form["education_level"].strip().title()
+        industry = request.form["industry"].strip()
+        company_size = request.form["company_size"].strip().title()
+        location = request.form["location"].strip()
+        remote_work = request.form["remote_work"].strip().title()
 
-        # -------- Industry --------
-        ind_education = int(request.form.get('ind_education', 0))
-        ind_finance = int(request.form.get('ind_finance', 0))
-        ind_government = int(request.form.get('ind_government', 0))
-        ind_healthcare = int(request.form.get('ind_healthcare', 0))
-        ind_manufacturing = int(request.form.get('ind_manufacturing', 0))
-        ind_media = int(request.form.get('ind_media', 0))
-        ind_retail = int(request.form.get('ind_retail', 0))
-        ind_tech = int(request.form.get('ind_tech', 0))
-        ind_telecom = int(request.form.get('ind_telecom', 0))
+        experience_bucket = exp_bucket(experience_years)
+        skill_strength = skills_count + (certifications * 2)
+        exp_skill_interaction = experience_years * skills_count
 
-        # -------- Company size --------
-        comp_large = int(request.form.get('comp_large', 0))
-        comp_medium = int(request.form.get('comp_medium', 0))
-        comp_small = int(request.form.get('comp_small', 0))
-        comp_startup = int(request.form.get('comp_startup', 0))
+        education_level_encoded = education_map.get(education_level)
+        company_size_encoded = company_map.get(company_size)
+        remote_encoded = remote_map.get(remote_work)
 
-        # -------- Location --------
-        loc_canada = int(request.form.get('loc_canada', 0))
-        loc_germany = int(request.form.get('loc_germany', 0))
-        loc_india = int(request.form.get('loc_india', 0))
-        loc_netherlands = int(request.form.get('loc_netherlands', 0))
-        loc_remote = int(request.form.get('loc_remote', 0))
-        loc_singapore = int(request.form.get('loc_singapore', 0))
-        loc_sweden = int(request.form.get('loc_sweden', 0))
-        loc_uk = int(request.form.get('loc_uk', 0))
-        loc_usa = int(request.form.get('loc_usa', 0))
+        if education_level_encoded is None:
+            raise ValueError(f"Invalid education level: {education_level}")
 
-        # -------- Remote --------
-        remote_no = int(request.form.get('remote_no', 0))
-        remote_yes = int(request.form.get('remote_yes', 0))
+        if company_size_encoded is None:
+            raise ValueError(f"Invalid company size: {company_size}")
 
-        # -------- Feature vector (ORDER MUST MATCH TRAINING) --------
-        features = np.array([[ 
-            job_title,experience_years, skills_count, certifications,
-            edu_diploma, edu_highschool, edu_master, edu_phd,
-            ind_education, ind_finance, ind_government, ind_healthcare,
-            ind_manufacturing, ind_media, ind_retail, ind_tech, ind_telecom,
-            comp_large, comp_medium, comp_small, comp_startup,
-            loc_canada, loc_germany, loc_india, loc_netherlands,
-            loc_remote, loc_singapore, loc_sweden, loc_uk, loc_usa,
-            remote_no, remote_yes
-        ]])
+        if remote_encoded is None:
+            raise ValueError(f"Invalid remote work value: {remote_work}")
 
-        # -------- Prediction --------
-        pred = model.predict(features)
-        salary = round(pred[0], 2)
+        experience_company = experience_years * company_size_encoded
+        experience_education = experience_years * education_level_encoded
 
-        return render_template('index.html', prediction=f"Estimated Salary: ${salary}")
+        input_df = pd.DataFrame([{
+            "job_title": job_title,
+            "experience_years": experience_years,
+            "education_level": education_level,
+            "skills_count": skills_count,
+            "industry": industry,
+            "company_size": company_size,
+            "location": location,
+            "remote_work": remote_work,
+            "certifications": certifications,
+            "experience_bucket": experience_bucket,
+            "skill_strength": skill_strength,
+            "exp_skill_interaction": exp_skill_interaction,
+            "education_level_encoded": education_level_encoded,
+            "company_size_encoded": company_size_encoded,
+            "remote_encoded": remote_encoded,
+            "experience_company": experience_company,
+            "experience_education": experience_education
+        }])
+
+        prediction = model.predict(input_df)[0]
+
+        return render_template(
+            "index.html",
+            prediction_text=f"Predicted Salary: {round(prediction, 2)}"
+        )
 
     except Exception as e:
-        return render_template('index.html', prediction=f"Error: {str(e)}")
+        return render_template(
+            "index.html",
+            prediction_text=f"Error: {str(e)}"
+        )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(debug=True)
